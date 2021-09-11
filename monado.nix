@@ -21,7 +21,7 @@
 , libffi
 , libjpeg
 # , librealsense
-, libsurvive
+# , libsurvive
 , libusb1
 , libuv
 , libuvc
@@ -40,7 +40,12 @@
 # instead of via the monado-service program. For more information see:
 # https://gitlab.freedesktop.org/monado/monado/-/blob/master/doc/targets.md#xrt_feature_service-disabled
 , serviceSupport ? true
+, callPackage
 }:
+
+let libsurvive = callPackage ./libsurvive.nix { };
+
+in
 
 stdenv.mkDerivation rec {
   pname = "monado";
