@@ -126,4 +126,9 @@ stdenv.mkDerivation rec {
     maintainers = with maintainers; [ expipiplus1 prusnak ];
     platforms = platforms.linux;
   };
+
+  fixupPhase = ''
+  mkdir -p $out/bin
+  ln -s ${libsurvive}/bin/survive-cli $out/bin/survive-cli
+  '';
 }
