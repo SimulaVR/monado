@@ -42,12 +42,24 @@
 , serviceSupport ? true
 , callPackage
 }:
+let
 
-let libsurvive = callPackage ./libsurvive.nix { };
+/* Modify a stdenv so that it produces debug builds; that is,
+  binaries have debug info, and compiler optimisations are
+  disabled. */
+keepDebugInfo = stdenv: stdenv //
+  { mkDerivation = args: stdenv.mkDerivation (args // {
+      dontStrip = true;
+      NIX_CFLAGS_COMPILE = toString (args.NIX_CFLAGS_COMPILE or "") + " -g -ggdb -Og";
+    });
+  };
+stdenvDebug = keepDebugInfo stdenv;
+
+libsurvive = callPackage ./libsurvive.nix { stdenv = stdenvDebug; };
 
 in
 
-stdenv.mkDerivation rec {
+stdenvDebug.mkDerivation rec {
   pname = "monado";
   version = "21.0.0";
 
@@ -126,6 +138,8 @@ stdenv.mkDerivation rec {
     maintainers = with maintainers; [ expipiplus1 prusnak ];
     platforms = platforms.linux;
   };
+
+  dontStrip = true;
 
   fixupPhase = ''
   mkdir -p $out/bin

@@ -9,7 +9,19 @@
 , zlib
 }:
 
-stdenv.mkDerivation rec {
+let
+
+keepDebugInfo = stdenv: stdenv //
+  { mkDerivation = args: stdenv.mkDerivation (args // {
+      dontStrip = true;
+      NIX_CFLAGS_COMPILE = toString (args.NIX_CFLAGS_COMPILE or "") + " -g -ggdb -Og";
+    });
+  };
+stdenvDebug = keepDebugInfo stdenv;
+openblas-debug = openblas.override { stdenv = stdenvDebug; };
+in
+
+stdenvDebug.mkDerivation rec {
   pname = "libsurvive";
   version = "0.3";
 
@@ -28,9 +40,11 @@ stdenv.mkDerivation rec {
     freeglut
     liblapack
     libusb1
-    openblas
+    openblas-debug
     zlib
   ];
+
+  dontStrip = true;
 
   meta = with lib; {
     description = "Open Source Lighthouse Tracking System";
