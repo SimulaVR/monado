@@ -41,6 +41,12 @@
 # https://gitlab.freedesktop.org/monado/monado/-/blob/master/doc/targets.md#xrt_feature_service-disabled
 , serviceSupport ? true
 , callPackage
+# , openblas
+, rr
+, writeShellScriptBin
+, zstd
+, awscli
+, libbsd
 }:
 let
 
@@ -51,11 +57,35 @@ keepDebugInfo = stdenv: stdenv //
   { mkDerivation = args: stdenv.mkDerivation (args // {
       dontStrip = true;
       NIX_CFLAGS_COMPILE = toString (args.NIX_CFLAGS_COMPILE or "") + " -g -ggdb -Og";
+      DEBUG = "1";
     });
   };
 stdenvDebug = keepDebugInfo stdenv;
 
-libsurvive = callPackage ./libsurvive.nix { stdenv = stdenvDebug; };
+# openblas-dev = openblas.override { stdenv = stdenvDebug; };
+openblas-dev = callPackage ./openblas.nix { stdenv = stdenvDebug; };
+libsurvive = callPackage ./libsurvive.nix { stdenv = stdenvDebug; openblas = openblas-dev; };
+
+rrSources = writeShellScriptBin "rr_sources" ''
+  # :<>s/openblas/*/g
+  RR_LOG=all:debug ./result/bin/rr sources \
+  --substitute=libopenblas.so.0.1.0=$PWD/result/srcs/openblas/src \
+  ./rr/latest-trace \
+  > sources.txt 2>&1
+'';
+
+pernoscoSubmit = writeShellScriptBin "pernosco_submit" ''
+  PATH=${zstd}/bin:${awscli}/bin:./result/bin:$PATH ${python3}/bin/python3 ./submodules/pernosco-submit/pernosco-submit \
+    -x \
+  upload \
+  --title $2 \
+  --substitute=libopenblas.so.0.1.0=$PWD/result/srcs/openblas/src \
+  $1 ./. \
+  $PWD/result/srcs \
+  $PWD/result/srcs/openblas/src \
+  ${openblas-dev} \
+  > pernosco.txt 2>&1
+'';
 
 in
 
@@ -114,6 +144,8 @@ stdenvDebug.mkDerivation rec {
     wayland
     wayland-protocols
     zlib
+    openblas-dev
+    libbsd
   ];
 
   # realsense is disabled, the build ends with the following error:
@@ -139,10 +171,20 @@ stdenvDebug.mkDerivation rec {
     platforms = platforms.linux;
   };
 
-  dontStrip = true;
 
   fixupPhase = ''
-  mkdir -p $out/bin
-  ln -s ${libsurvive}/bin/survive-cli $out/bin/survive-cli
+  mkdir -p $out/srcs
+  ln -s ${openblas-dev.src} $out/srcs/openblas
+
+  ln -s ${rr}/bin/rr $out/bin/rr
+  ln -s ${rrSources}/bin/rr_sources $out/bin/rr_sources
+  ln -s ${pernoscoSubmit}/bin/pernosco_submit $out/bin/pernosco_submit
+
+
+  echo "_RR_TRACE_DIR=./rr ${rr}/bin/rr record -i SIGUSR1 ./result/bin/monado-service" >> $out/bin/monado_rr_record
+  chmod +x $out/bin/monado_rr_record
+
+  echo "_RR_TRACE_DIR=./rr ${rr}/bin/rr -M replay \"\$@\"" >> $out/bin/monado_rr_replay
+  chmod +x $out/bin/monado_rr_replay
   '';
 }

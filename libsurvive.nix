@@ -44,8 +44,6 @@ stdenvDebug.mkDerivation rec {
     zlib
   ];
 
-  dontStrip = true;
-
   meta = with lib; {
     description = "Open Source Lighthouse Tracking System";
     homepage = "https://github.com/cntools/libsurvive";
