@@ -11,8 +11,7 @@
 , dbus
 , eigen
 , ffmpeg
-, gst_all_1 # gst-plugins-base
-#, gstreamer
+, gst_all_1
 , hidapi
 , libGL
 , libXau
@@ -20,8 +19,6 @@
 , libXrandr
 , libffi
 , libjpeg
-# , librealsense
-# , libsurvive
 , libusb1
 , libuv
 , libuvc
@@ -41,14 +38,14 @@
 # https://gitlab.freedesktop.org/monado/monado/-/blob/master/doc/targets.md#xrt_feature_service-disabled
 , serviceSupport ? true
 , callPackage
-# , openblas
-, rr
 , writeShellScriptBin
 , zstd
 , awscli
 , libbsd
 }:
 let
+
+rr = callPackage ./nix/rr/unstable.nix {};
 
 /* Modify a stdenv so that it produces debug builds; that is,
   binaries have debug info, and compiler optimisations are
@@ -62,14 +59,18 @@ keepDebugInfo = stdenv: stdenv //
   };
 stdenvDebug = keepDebugInfo stdenv;
 
-# openblas-dev = openblas.override { stdenv = stdenvDebug; };
 openblas-dev = callPackage ./openblas.nix { stdenv = stdenvDebug; };
 libsurvive = callPackage ./libsurvive.nix { stdenv = stdenvDebug; openblas = openblas-dev; };
+libsurvive-dev = libsurvive.overrideAttrs (oldAttrs: rec {
+
+NIX_CFLAGS_COMPILE = toString (oldAttrs.NIX_CFLAGS_COMPILE or "") + " -ffile-prefix-map=/build/source/build/redist=. -ffile-prefix-map=/build/source/src=./result/srcs/libsurvive/src -ffile-prefix-map=/build/source/build/src=./result/srcs/libsurvive -ffile-prefix-map=/build/source/redist=redist -ffile-prefix-map=/build/source/build/src=./result/srcs/libsurvive/src -ffile-prefix-map=/build/source/build/src=. -ffile-prefix-map=/build/source/redist=./result/srcs/libsurvive/redist -ffile-prefix-map=/build/source/include/libsurvive=result/srcs/libsurvive/include/libsurvive";
+
+});
 
 rrSources = writeShellScriptBin "rr_sources" ''
-  # :<>s/openblas/*/g
   RR_LOG=all:debug ./result/bin/rr sources \
-  --substitute=libopenblas.so.0.1.0=$PWD/result/srcs/openblas/src \
+  --substitute=$(basename $(readlink ${openblas-dev}/lib/libopenblas.so))=$PWD/result/srcs/openblas/src \
+  --substitute=$(basename $(readlink ${libsurvive-dev}/lib/libsurvive.so))=$PWD/result/srcs/libsurvive/src \
   ./rr/latest-trace \
   > sources.txt 2>&1
 '';
@@ -79,11 +80,17 @@ pernoscoSubmit = writeShellScriptBin "pernosco_submit" ''
     -x \
   upload \
   --title $2 \
-  --substitute=libopenblas.so.0.1.0=$PWD/result/srcs/openblas/src \
+  --substitute=$(basename $(readlink ${openblas-dev}/lib/libopenblas.so))=$PWD/result/srcs/openblas/src \
+  --substitute=$(basename $(readlink ${libsurvive-dev}/lib/libsurvive.so))=$PWD/result/srcs/libsurvive/src \
   $1 ./. \
+  $PWD \
+  $PWD/xrt \
+  $PWD/external \
   $PWD/result/srcs \
   $PWD/result/srcs/openblas/src \
   ${openblas-dev} \
+  $PWD/result/srcs/libsurvive/src \
+  ${libsurvive-dev} \
   > pernosco.txt 2>&1
 '';
 
@@ -93,15 +100,28 @@ stdenvDebug.mkDerivation rec {
   pname = "monado";
   version = "21.0.0";
 
-  # src = fetchFromGitLab {
-  #   domain = "gitlab.freedesktop.org";
-  #   owner = pname;
-  #   repo = pname;
-  #   rev = "v${version}";
-  #   sha256 = "07zxs96i3prjqww1f68496cl2xxqaidx32lpfyy0pn5am4c297zc";
-  # };
-
   src = ./.;
+
+  NIX_CFLAGS_COMPILE = ''-ffile-prefix-map=/build/monado/build/src/xrt/targets/service=.
+  -ffile-prefix-map=/build/monado/src=./src
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/ipc=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/targets/common=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/state_trackers/gui=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/state_trackers/prober=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/compositor=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/compositor=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/targets/common=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/drivers=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/drivers=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary/bindings=.
+  -ffile-prefix-map=/build/monado/build/src/xrt/auxiliary=.
+  '';
 
   nativeBuildInputs = [
     cmake
@@ -130,7 +150,7 @@ stdenvDebug.mkDerivation rec {
     libjpeg
     libffi
     # librealsense.dev - see below
-    libsurvive
+    libsurvive-dev
     libusb1
     libuv
     libuvc
@@ -174,17 +194,17 @@ stdenvDebug.mkDerivation rec {
 
   fixupPhase = ''
   mkdir -p $out/srcs
-  ln -s ${openblas-dev.src} $out/srcs/openblas
+  cp -r ${openblas-dev.src} $out/srcs/openblas
+  cp -r ${libsurvive-dev.src} $out/srcs/libsurvive
 
   ln -s ${rr}/bin/rr $out/bin/rr
   ln -s ${rrSources}/bin/rr_sources $out/bin/rr_sources
   ln -s ${pernoscoSubmit}/bin/pernosco_submit $out/bin/pernosco_submit
 
+  echo "_RR_TRACE_DIR=./rr nixGLIntel ${rr}/bin/rr record -i SIGUSR1 ./result/bin/monado-service" >> $out/bin/rr_record
+  chmod +x $out/bin/rr_record
 
-  echo "_RR_TRACE_DIR=./rr ${rr}/bin/rr record -i SIGUSR1 ./result/bin/monado-service" >> $out/bin/monado_rr_record
-  chmod +x $out/bin/monado_rr_record
-
-  echo "_RR_TRACE_DIR=./rr ${rr}/bin/rr -M replay \"\$@\"" >> $out/bin/monado_rr_replay
-  chmod +x $out/bin/monado_rr_replay
+  echo "_RR_TRACE_DIR=./rr ${rr}/bin/rr -M replay \"\$@\"" >> $out/bin/rr_replay
+  chmod +x $out/bin/rr_replay
   '';
 }
