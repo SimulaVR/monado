@@ -593,8 +593,8 @@ create_scratch_image_and_view(struct vk_bundle *vk,
                               VkImageView *out_srgb_view,
                               VkImageView *out_unorm_view)
 {
-	VkFormat srgb_format = VK_FORMAT_R8G8B8A8_SRGB;
-	VkFormat unorm_format = VK_FORMAT_R8G8B8A8_UNORM;
+	VkFormat srgb_format = VK_FORMAT_BC7_SRGB_BLOCK;
+	VkFormat unorm_format = VK_FORMAT_BC7_UNORM_BLOCK;
 	VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D;
 
 	VkDeviceMemory device_memory = VK_NULL_HANDLE;
